@@ -1,0 +1,9 @@
+{
+  "name": "flask-deezer-app-node",
+  "version": "1.0.0",
+  "description": "Node.js dependencies for Flask Deezer app",
+  "dependencies": {
+    "d-fi-core": "file:../d-fi-core",
+    "axios": "^1.6.0"
+  }
+}

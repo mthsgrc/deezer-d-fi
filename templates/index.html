@@ -1,0 +1,387 @@
+{% extends "base.html" %}
+
+{% block content %}
+<!-- Configuration Section -->
+<div id="config-section" class="section">
+    <h2>Configuration</h2>
+    <div id="config-status">
+        <p id="config-message">Loading...</p>
+    </div>
+    
+    <form id="config-form" class="hidden">
+        <div class="form-group">
+            <label for="arl">ARL Cookie:</label>
+            <input type="password" id="arl" name="arl" placeholder="Enter your ARL cookie">
+            <small>Get your ARL cookie from Deezer browser session</small>
+        </div>
+        
+        <div class="form-group">
+            <label for="quality">Download Quality:</label>
+            <select id="quality" name="quality">
+                <option value="1">128kbps</option>
+                <option value="3" selected>320kbps</option>
+                <option value="9">FLAC</option>
+            </select>
+        </div>
+        
+        <div class="form-group">
+            <label for="download_path">Download Path:</label>
+            <input type="text" id="download_path" name="download_path" value="./downloads">
+        </div>
+        
+        <div class="form-group">
+            <label>
+                <input type="checkbox" id="organize_by_folder" name="organize_by_folder" checked>
+                Organize by artist folders
+            </label>
+        </div>
+        
+        <button type="submit">Save Configuration</button>
+    </form>
+</div>
+
+<!-- Search Section -->
+<div id="search-section" class="section hidden">
+    <h2>Search Music</h2>
+    <form id="search-form">
+        <div class="search-bar">
+            <input type="text" id="search-query" placeholder="Search for tracks, albums, artists..." required>
+            <select id="search-type">
+                <option value="TRACK">Tracks</option>
+                <option value="ALBUM">Albums</option>
+                <option value="ARTIST">Artists</option>
+                <option value="PLAYLIST">Playlists</option>
+            </select>
+            <button type="submit">Search</button>
+        </div>
+    </form>
+    
+    <div id="search-loading" class="hidden">Searching...</div>
+    <div id="search-results"></div>
+</div>
+
+<!-- Downloads Section -->
+<div id="downloads-section" class="section hidden">
+    <h2>Downloads</h2>
+    <div id="download-list"></div>
+</div>
+
+<!-- Error Display -->
+<div id="error-message" class="error hidden"></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Global variables
+let config = {};
+let activeDownloads = {};
+
+// Initialize app
+document.addEventListener('DOMContentLoaded', function() {
+    loadConfig();
+    setupEventListeners();
+});
+
+function setupEventListeners() {
+    // Config form
+    document.getElementById('config-form').addEventListener('submit', saveConfig);
+    
+    // Search form
+    document.getElementById('search-form').addEventListener('submit', performSearch);
+}
+
+async function loadConfig() {
+    try {
+        const response = await fetch('/api/config');
+        const data = await response.json();
+        
+        config = data.config;
+        
+        if (data.configured) {
+            showSearchSection();
+        } else {
+            showConfigSection();
+        }
+    } catch (error) {
+        showError('Failed to load configuration');
+    }
+}
+
+function showConfigSection() {
+    document.getElementById('config-section').classList.remove('hidden');
+    document.getElementById('search-section').classList.add('hidden');
+    document.getElementById('downloads-section').classList.add('hidden');
+    
+    document.getElementById('config-message').textContent = 'Please configure your Deezer ARL cookie to continue.';
+    document.getElementById('config-form').classList.remove('hidden');
+}
+
+function showSearchSection() {
+    document.getElementById('config-section').classList.add('hidden');
+    document.getElementById('search-section').classList.remove('hidden');
+    document.getElementById('downloads-section').classList.remove('hidden');
+    
+    // Update form with current config
+    document.getElementById('quality').value = config.quality || '3';
+    document.getElementById('download_path').value = config.download_path || './downloads';
+    document.getElementById('organize_by_folder').checked = config.organize_by_folder !== false;
+}
+
+async function saveConfig(e) {
+    e.preventDefault();
+    
+    const formData = new FormData(e.target);
+    const configData = {
+        arl: formData.get('arl'),
+        quality: parseInt(formData.get('quality')),
+        download_path: formData.get('download_path'),
+        organize_by_folder: formData.get('organize_by_folder') === 'on'
+    };
+    
+    try {
+        const response = await fetch('/api/config', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(configData)
+        });
+        
+        if (response.ok) {
+            hideError();
+            await loadConfig();
+        } else {
+            const error = await response.json();
+            showError(error.error || 'Failed to save configuration');
+        }
+    } catch (error) {
+        showError('Failed to save configuration');
+    }
+}
+
+async function performSearch(e) {
+    e.preventDefault();
+    
+    const query = document.getElementById('search-query').value.trim();
+    const type = document.getElementById('search-type').value;
+    
+    if (!query) return;
+    
+    showLoading(true);
+    hideError();
+    
+    try {
+        const response = await fetch(`/api/search?q=${encodeURIComponent(query)}&type=${type}`);
+        const data = await response.json();
+        
+        if (response.ok) {
+            displaySearchResults(data, type);
+        } else {
+            showError(data.error || 'Search failed');
+        }
+    } catch (error) {
+        showError('Search failed');
+    } finally {
+        showLoading(false);
+    }
+}
+
+function displaySearchResults(results, type) {
+    const container = document.getElementById('search-results');
+    container.innerHTML = '';
+    
+    if (!results || !results.data || results.data.length === 0) {
+        container.innerHTML = '<p>No results found.</p>';
+        return;
+    }
+    
+    const resultsList = document.createElement('div');
+    resultsList.className = 'results-list';
+    
+    results.data.forEach(item => {
+        const resultItem = createResultItem(item, type);
+        resultsList.appendChild(resultItem);
+    });
+    
+    container.appendChild(resultsList);
+}
+
+function createResultItem(item, type) {
+    const div = document.createElement('div');
+    div.className = 'result-item';
+    
+    let content = '';
+    let downloadButton = '';
+    
+    switch (type) {
+        case 'TRACK':
+            content = `
+                <div class="track-info">
+                    <h3>${item.SNG_TITLE}</h3>
+                    <p>${item.ART_NAME} - ${item.ALB_TITLE}</p>
+                </div>
+            `;
+            downloadButton = `<button class="download-btn" onclick="downloadTrack('${item.SNG_ID}', '${item.SNG_TITLE}')">Download</button>`;
+            break;
+            
+        case 'ALBUM':
+            content = `
+                <div class="album-info">
+                    <h3>${item.ALB_TITLE}</h3>
+                    <p>${item.ART_NAME} - ${item.NUMBER_TRACK} tracks</p>
+                </div>
+            `;
+            downloadButton = `<button class="download-btn" onclick="downloadAlbum('${item.ALB_ID}', '${item.ALB_TITLE}')">Download Album</button>`;
+            break;
+            
+        case 'ARTIST':
+            content = `
+                <div class="artist-info">
+                    <h3>${item.ART_NAME}</h3>
+                    <p>${item.NB_FAN} fans</p>
+                </div>
+            `;
+            break;
+            
+        case 'PLAYLIST':
+            content = `
+                <div class="playlist-info">
+                    <h3>${item.TITLE}</h3>
+                    <p>${item.NB_SONG} songs</p>
+                </div>
+            `;
+            downloadButton = `<button class="download-btn" onclick="downloadPlaylist('${item.PLAYLIST_ID}', '${item.TITLE}')">Download Playlist</button>`;
+            break;
+    }
+    
+    div.innerHTML = content + downloadButton;
+    return div;
+}
+
+async function downloadTrack(trackId, trackTitle) {
+    try {
+        const response = await fetch(`/api/download/track/${trackId}`);
+        const data = await response.json();
+        
+        if (response.ok) {
+            activeDownloads[data.download_id] = {
+                type: 'track',
+                title: trackTitle,
+                status: 'starting'
+            };
+            
+            updateDownloadsList();
+            pollDownloadStatus(data.download_id);
+        } else {
+            showError(data.error || 'Download failed');
+        }
+    } catch (error) {
+        showError('Download failed');
+    }
+}
+
+async function pollDownloadStatus(downloadId) {
+    const maxAttempts = 60; // 5 minutes max
+    let attempts = 0;
+    
+    const poll = async () => {
+        if (attempts >= maxAttempts) {
+            delete activeDownloads[downloadId];
+            updateDownloadsList();
+            return;
+        }
+        
+        try {
+            const response = await fetch(`/api/download/status/${downloadId}`);
+            const status = await response.json();
+            
+            if (response.ok) {
+                activeDownloads[downloadId] = {
+                    ...activeDownloads[downloadId],
+                    ...status
+                };
+                
+                updateDownloadsList();
+                
+                if (status.status === 'completed' || status.status === 'error') {
+                    if (status.status === 'error') {
+                        showError(status.message);
+                    }
+                    setTimeout(() => {
+                        delete activeDownloads[downloadId];
+                        updateDownloadsList();
+                    }, 5000);
+                    return;
+                }
+                
+                attempts++;
+                setTimeout(poll, 2000); // Poll every 2 seconds
+            } else {
+                delete activeDownloads[downloadId];
+                updateDownloadsList();
+            }
+        } catch (error) {
+            delete activeDownloads[downloadId];
+            updateDownloadsList();
+        }
+    };
+    
+    poll();
+}
+
+function updateDownloadsList() {
+    const container = document.getElementById('download-list');
+    container.innerHTML = '';
+    
+    if (Object.keys(activeDownloads).length === 0) {
+        container.innerHTML = '<p>No active downloads.</p>';
+        return;
+    }
+    
+    Object.entries(activeDownloads).forEach(([id, download]) => {
+        const item = document.createElement('div');
+        item.className = 'download-item';
+        
+        let statusClass = download.status;
+        let progressBar = '';
+        
+        if (download.status === 'downloading') {
+            progressBar = `<div class="progress-bar"><div class="progress-fill" style="width: ${download.progress}%"></div></div>`;
+        }
+        
+        item.innerHTML = `
+            <div class="download-info">
+                <h4>${download.title}</h4>
+                <p class="status ${statusClass}">${download.message}</p>
+                ${progressBar}
+            </div>
+        `;
+        
+        container.appendChild(item);
+    });
+}
+
+function showLoading(show) {
+    const loading = document.getElementById('search-loading');
+    if (show) {
+        loading.classList.remove('hidden');
+    } else {
+        loading.classList.add('hidden');
+    }
+}
+
+function showError(message) {
+    const errorDiv = document.getElementById('error-message');
+    errorDiv.textContent = message;
+    errorDiv.classList.remove('hidden');
+    
+    setTimeout(() => {
+        errorDiv.classList.add('hidden');
+    }, 5000);
+}
+
+function hideError() {
+    document.getElementById('error-message').classList.add('hidden');
+}
+</script>
+{% endblock %}
