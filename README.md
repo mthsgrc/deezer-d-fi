@@ -27,17 +27,23 @@ A minimal Flask web application for searching and downloading music from Deezer 
    cd flask-deezer-app
    ```
 
-2. **Install Python dependencies**:
+2. **Create and activate virtual environment**:
+   ```bash
+   python -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   ```
+
+3. **Install Python dependencies**:
    ```bash
    pip install -r requirements.txt
    ```
 
-3. **Install Node.js dependencies**:
+4. **Install Node.js dependencies**:
    ```bash
    npm install
    ```
 
-4. **Ensure d-fi-core is available**:
+5. **Ensure d-fi-core is available**:
    - The project expects d-fi-core to be available at `../d-fi-core`
    - If you have it elsewhere, update the `package.json` path
 
@@ -45,7 +51,7 @@ A minimal Flask web application for searching and downloading music from Deezer 
 
 1. **Start the Flask application**:
    ```bash
-   python app.py
+   source venv/bin/activate && python app.py
    ```
 
 2. **Open your browser** and navigate to `http://localhost:5000`
