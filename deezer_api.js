@@ -13,12 +13,16 @@ async function initApi() {
         throw new Error('ARL cookie is required');
     }
     
+    if (arl.length !== 192) {
+        throw new Error(`Invalid ARL cookie. Expected 192 characters, got ${arl.length}. Please get a fresh ARL from your browser.`);
+    }
+    
     try {
         await api.initDeezerApi(arl);
         
         // Verify user
         const user = await api.getUser();
-        console.log('Successfully authenticated as:', user.BLOG_NAME);
+        // Don't log authentication success - it breaks JSON parsing
         return true;
     } catch (err) {
         throw new Error(`Authentication failed: ${err.message}`);

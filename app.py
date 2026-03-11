@@ -34,17 +34,24 @@ class DeezerAPI:
     def call_node_script(self, method, params=None):
         """Call Node.js script to interact with d-fi-core"""
         try:
+            # Use absolute paths and ensure proper working directory
+            script_dir = Path(__file__).parent
             cmd = [
                 'node', 
-                str(self.node_script), 
+                str(script_dir / 'deezer_api.js'), 
                 method,
                 json.dumps(params or {}),
-                self.arl
+                self.arl or ''
             ]
             
             logger.info(f"Calling Node.js script: {method}")
+            logger.info(f"Working directory: {script_dir}")
+            logger.info(f"Command: {' '.join(cmd)}")
+            logger.info(f"ARL length: {len(self.arl) if self.arl else 0}")
+            
             result = subprocess.run(
                 cmd,
+                cwd=script_dir,  # Ensure we're in the right directory
                 capture_output=True,
                 text=True,
                 timeout=30
@@ -55,14 +62,19 @@ class DeezerAPI:
                 logger.error(f"Node script error: {error_msg}")
                 raise Exception(f"Node script error: {error_msg}")
             
+            # Check if stdout is empty
+            if not result.stdout.strip():
+                logger.error("Node script returned empty output")
+                raise Exception("Node script returned empty output")
+            
             return json.loads(result.stdout)
         except subprocess.TimeoutExpired:
             logger.error("Node script timeout")
             raise Exception("Request timeout")
         except json.JSONDecodeError as e:
             logger.error(f"Invalid JSON response: {e}")
-            logger.error(f"Raw output: {result.stdout}")
-            raise Exception(f"Invalid JSON response: {e}")
+            logger.error(f"Raw output: {result.stdout if 'result' in locals() else 'No output'}")
+            raise Exception(f"Invalid JSON response from Node.js script: {e}")
         except Exception as e:
             logger.error(f"API call failed: {e}")
             raise Exception(f"API call failed: {e}")
@@ -80,7 +92,8 @@ def api_config():
         return jsonify({
             'configured': config.is_configured(),
             'config': {
-                'arl': config.get('arl', '')[:10] + '...' if config.get('arl') else '',
+                'arl': config.get('arl', ''),  # Send full ARL for editing
+                'arl_display': config.get('arl', '')[:10] + '...' if config.get('arl') else '',  # Display version
                 'quality': config.get('quality', 3),
                 'download_path': config.get('download_path'),
                 'organize_by_folder': config.get('organize_by_folder', True),
@@ -96,7 +109,9 @@ def api_config():
             if not data['arl'].strip():
                 return jsonify({'error': 'ARL cookie is required'}), 400
             config.set('arl', data['arl'].strip())
+            # Update the API object's ARL
             deezer_api.arl = data['arl'].strip()
+            logger.info(f"Updated ARL cookie, length: {len(data['arl'].strip())}")
         
         # Update other settings
         for key in ['quality', 'download_path', 'organize_by_folder', 'create_playlist_folders']:
@@ -107,12 +122,20 @@ def api_config():
 
 @app.route('/api/search')
 def api_search():
+    # Reload config to get latest ARL
+    config.config = config.load_config()
+    deezer_api.arl = config.get('arl')
+    
     if not config.is_configured():
         return jsonify({'error': 'Deezer not configured. Please set ARL cookie.'}), 400
     
     query = request.args.get('q', '').strip()
     search_type = request.args.get('type', 'TRACK').upper()
     limit = int(request.args.get('limit', 15))
+    
+    logger.info(f"Search request: query='{query}', type='{search_type}'")
+    logger.info(f"Current ARL length: {len(config.get('arl', ''))}")
+    logger.info(f"API object ARL length: {len(deezer_api.arl or '')}")
     
     if not query:
         return jsonify({'error': 'Search query is required'}), 400

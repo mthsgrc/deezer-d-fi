@@ -13,6 +13,8 @@
             <label for="arl">ARL Cookie:</label>
             <input type="password" id="arl" name="arl" placeholder="Enter your ARL cookie">
             <small>Get your ARL cookie from Deezer browser session</small>
+            <button type="button" id="toggle-arl" onclick="toggleArlVisibility()">Show/Hide</button>
+            <button type="button" id="clear-arl" onclick="clearArl()">Clear</button>
         </div>
         
         <div class="form-group">
@@ -42,7 +44,10 @@
 
 <!-- Search Section -->
 <div id="search-section" class="section hidden">
-    <h2>Search Music</h2>
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        <h2 style="margin: 0;">Search Music</h2>
+        <button type="button" onclick="showConfigSection()" style="background: #95a5a6; padding: 8px 16px; font-size: 14px;">Settings</button>
+    </div>
     <form id="search-form">
         <div class="search-bar">
             <input type="text" id="search-query" placeholder="Search for tracks, albums, artists..." required>
@@ -112,7 +117,13 @@ function showConfigSection() {
     document.getElementById('search-section').classList.add('hidden');
     document.getElementById('downloads-section').classList.add('hidden');
     
-    document.getElementById('config-message').textContent = 'Please configure your Deezer ARL cookie to continue.';
+    if (config.arl && config.arl.length > 3) {
+        document.getElementById('config-message').textContent = 'Configuration found. You can update your settings below.';
+        document.getElementById('arl').value = config.arl;
+    } else {
+        document.getElementById('config-message').textContent = 'Please configure your Deezer ARL cookie to continue.';
+        document.getElementById('arl').value = '';
+    }
     document.getElementById('config-form').classList.remove('hidden');
 }
 
@@ -382,6 +393,26 @@ function showError(message) {
 
 function hideError() {
     document.getElementById('error-message').classList.add('hidden');
+}
+
+function toggleArlVisibility() {
+    const arlInput = document.getElementById('arl');
+    const toggleBtn = document.getElementById('toggle-arl');
+    
+    if (arlInput.type === 'password') {
+        arlInput.type = 'text';
+        toggleBtn.textContent = 'Hide';
+    } else {
+        arlInput.type = 'password';
+        toggleBtn.textContent = 'Show';
+    }
+}
+
+function clearArl() {
+    if (confirm('Are you sure you want to clear the ARL cookie? You will need to re-enter it.')) {
+        document.getElementById('arl').value = '';
+        document.getElementById('arl').focus();
+    }
 }
 </script>
 {% endblock %}
