@@ -201,7 +201,13 @@ function displaySearchResults(results, type) {
     const container = document.getElementById('search-results');
     container.innerHTML = '';
     
-    if (!results || !results.data || results.data.length === 0) {
+    // Get the correct data based on search type
+    let data = [];
+    if (results[type] && results[type].data) {
+        data = results[type].data;
+    }
+    
+    if (!data || data.length === 0) {
         container.innerHTML = '<p>No results found.</p>';
         return;
     }
@@ -209,7 +215,7 @@ function displaySearchResults(results, type) {
     const resultsList = document.createElement('div');
     resultsList.className = 'results-list';
     
-    results.data.forEach(item => {
+    data.forEach(item => {
         const resultItem = createResultItem(item, type);
         resultsList.appendChild(resultItem);
     });
@@ -270,9 +276,12 @@ function createResultItem(item, type) {
 }
 
 async function downloadTrack(trackId, trackTitle) {
+    console.log('Starting download for track:', trackId, trackTitle);
     try {
         const response = await fetch(`/api/download/track/${trackId}`);
+        console.log('Response status:', response.status);
         const data = await response.json();
+        console.log('Response data:', data);
         
         if (response.ok) {
             activeDownloads[data.download_id] = {
@@ -284,27 +293,61 @@ async function downloadTrack(trackId, trackTitle) {
             updateDownloadsList();
             pollDownloadStatus(data.download_id);
         } else {
+            console.error('Download failed:', data.error);
             showError(data.error || 'Download failed');
         }
     } catch (error) {
-        showError('Download failed');
+        console.error('Download error:', error);
+        showError('Download failed: ' + error.message);
+    }
+}
+
+async function downloadAlbum(albumId, albumTitle) {
+    console.log('Starting download for album:', albumId, albumTitle);
+    try {
+        const response = await fetch(`/api/download/album/${albumId}`);
+        console.log('Response status:', response.status);
+        const data = await response.json();
+        console.log('Response data:', data);
+        
+        if (response.ok) {
+            activeDownloads[data.download_id] = {
+                type: 'album',
+                title: albumTitle,
+                status: 'starting'
+            };
+            
+            updateDownloadsList();
+            pollDownloadStatus(data.download_id);
+        } else {
+            console.error('Album download failed:', data.error);
+            showError(data.error || 'Album download failed');
+        }
+    } catch (error) {
+        console.error('Album download error:', error);
+        showError('Album download failed: ' + error.message);
     }
 }
 
 async function pollDownloadStatus(downloadId) {
-    const maxAttempts = 60; // 5 minutes max
+    console.log('Polling download status for:', downloadId);
+    const maxAttempts = 60;
     let attempts = 0;
     
     const poll = async () => {
         if (attempts >= maxAttempts) {
+            console.log('Max attempts reached');
             delete activeDownloads[downloadId];
             updateDownloadsList();
             return;
         }
         
+        attempts++;
+        
         try {
             const response = await fetch(`/api/download/status/${downloadId}`);
             const status = await response.json();
+            console.log('Status update:', status);
             
             if (response.ok) {
                 activeDownloads[downloadId] = {
@@ -315,26 +358,19 @@ async function pollDownloadStatus(downloadId) {
                 updateDownloadsList();
                 
                 if (status.status === 'completed' || status.status === 'error') {
-                    if (status.status === 'error') {
-                        showError(status.message);
-                    }
+                    console.log('Download finished:', status.status);
                     setTimeout(() => {
                         delete activeDownloads[downloadId];
                         updateDownloadsList();
                     }, 5000);
                     return;
                 }
-                
-                attempts++;
-                setTimeout(poll, 2000); // Poll every 2 seconds
-            } else {
-                delete activeDownloads[downloadId];
-                updateDownloadsList();
             }
         } catch (error) {
-            delete activeDownloads[downloadId];
-            updateDownloadsList();
+            console.error('Poll error:', error);
         }
+        
+        setTimeout(poll, 2000);
     };
     
     poll();
@@ -343,6 +379,9 @@ async function pollDownloadStatus(downloadId) {
 function updateDownloadsList() {
     const container = document.getElementById('download-list');
     container.innerHTML = '';
+    
+    console.log('Updating downloads list:', Object.keys(activeDownloads));
+    console.log('Active downloads:', activeDownloads);
     
     if (Object.keys(activeDownloads).length === 0) {
         container.innerHTML = '<p>No active downloads.</p>';
@@ -353,18 +392,12 @@ function updateDownloadsList() {
         const item = document.createElement('div');
         item.className = 'download-item';
         
-        let statusClass = download.status;
-        let progressBar = '';
-        
-        if (download.status === 'downloading') {
-            progressBar = `<div class="progress-bar"><div class="progress-fill" style="width: ${download.progress}%"></div></div>`;
-        }
-        
         item.innerHTML = `
             <div class="download-info">
-                <h4>${download.title}</h4>
-                <p class="status ${statusClass}">${download.message}</p>
-                ${progressBar}
+                <h4>${download.title || 'Unknown'}</h4>
+                <p>Status: ${download.status || 'starting'}</p>
+                ${download.progress ? `<p>Progress: ${download.progress}%</p>` : ''}
+                ${download.message ? `<p>${download.message}</p>` : ''}
             </div>
         `;
         

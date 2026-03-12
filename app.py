@@ -49,12 +49,17 @@ class DeezerAPI:
             logger.info(f"Command: {' '.join(cmd)}")
             logger.info(f"ARL length: {len(self.arl) if self.arl else 0}")
             
+            # Set environment for OpenSSL legacy provider
+            env = os.environ.copy()
+            env['NODE_OPTIONS'] = '--openssl-legacy-provider'
+            
             result = subprocess.run(
                 cmd,
-                cwd=script_dir,  # Ensure we're in the right directory
+                cwd=script_dir,
                 capture_output=True,
                 text=True,
-                timeout=30
+                timeout=30,
+                env=env
             )
             
             if result.returncode != 0:
@@ -232,6 +237,85 @@ def api_album_info(album_id):
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/download/album/<album_id>')
+def api_download_album(album_id):
+    if not config.is_configured():
+        return jsonify({'error': 'Deezer not configured. Please set ARL cookie.'}), 400
+    
+    download_id = f"album_{album_id}_{int(time.time())}"
+    download_progress[download_id] = {
+        'status': 'starting',
+        'progress': 0,
+        'message': 'Starting album download...'
+    }
+    
+    def download_album_background():
+        try:
+            download_progress[download_id]['status'] = 'fetching_info'
+            download_progress[download_id]['message'] = 'Fetching album information...'
+            
+            album_info = deezer_api.call_node_script('getAlbumInfo', {'album_id': album_id})
+            album_tracks_response = deezer_api.call_node_script('getAlbumTracks', {'album_id': album_id})
+            
+            # Extract tracks from response (could be list or dict with 'items' key)
+            if isinstance(album_tracks_response, dict):
+                album_tracks = album_tracks_response.get('items', []) or album_tracks_response.get('data', [])
+            elif isinstance(album_tracks_response, list):
+                album_tracks = album_tracks_response
+            else:
+                album_tracks = []
+            
+            print(f"Extracted {len(album_tracks)} tracks from album")
+            if album_tracks:
+                print(f"First track: {album_tracks[0]}")
+            
+            total_tracks = len(album_tracks)
+            download_progress[download_id]['total_tracks'] = total_tracks
+            
+            for i, track in enumerate(album_tracks):
+                download_progress[download_id]['current_track'] = i + 1
+                
+                # Handle both dictionary and string formats
+                if isinstance(track, dict):
+                    track_title = track.get('SNG_TITLE', 'Unknown')
+                    track_id = track.get('SNG_ID')
+                elif isinstance(track, str):
+                    track_title = track
+                    track_id = track
+                else:
+                    track_title = str(track)
+                    track_id = str(track)
+                
+                print(f"Processing track {i+1}: ID={track_id}, Title={track_title}")
+                
+                download_progress[download_id]['message'] = f'Downloading track {i + 1} of {total_tracks}: {track_title}'
+                download_progress[download_id]['progress'] = (i / total_tracks) * 100
+                
+                try:
+                    result = deezer_api.call_node_script('downloadTrack', {
+                        'track_id': track_id,
+                        'quality': config.get('quality', 3),
+                        'download_path': config.get('download_path'),
+                        'organize_by_folder': config.get('organize_by_folder', True)
+                    })
+                except Exception as track_error:
+                    print(f'Failed to download track {track_title}: {track_error}')
+                    continue
+            
+            download_progress[download_id]['status'] = 'completed'
+            download_progress[download_id]['progress'] = 100
+            download_progress[download_id]['message'] = f'Downloaded album: {album_info.get("ALB_TITLE", "Unknown")}'
+            
+        except Exception as e:
+            download_progress[download_id]['status'] = 'error'
+            download_progress[download_id]['message'] = f'Error: {str(e)}'
+    
+    thread = threading.Thread(target=download_album_background)
+    thread.daemon = True
+    thread.start()
+    
+    return jsonify({'download_id': download_id})
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
