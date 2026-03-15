@@ -47,3 +47,8 @@ config.json
 
 # Logs
 *.log
+
+# Other files
+flask_lessons.py
+FLASK_TUTORIAL.md
+generate_lessons.py
