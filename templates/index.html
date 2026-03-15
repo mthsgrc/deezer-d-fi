@@ -258,9 +258,19 @@ function createResultItem(item, type) {
     let content = '';
     let downloadButton = '';
     
+    // Get album cover URL
+    const coverUrl = getDeezerCoverUrl(item.ALB_PICTURE, 56);
+    const coverHtml = coverUrl ? 
+        `<img src="${coverUrl}" alt="Album Cover" class="result-cover" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+         <div class="result-cover-placeholder" style="display: none;">${createPlaceholderIcon('album')}</div>` : 
+        `<div class="result-cover-placeholder">${createPlaceholderIcon('album')}</div>`;
+    
     switch (type) {
         case 'TRACK':
             content = `
+                <div class="result-cover-container">
+                    ${coverHtml}
+                </div>
                 <div class="track-info">
                     <h3>${item.SNG_TITLE}</h3>
                     <p>${item.ART_NAME} - ${item.ALB_TITLE}</p>
@@ -271,6 +281,9 @@ function createResultItem(item, type) {
             
         case 'ALBUM':
             content = `
+                <div class="result-cover-container">
+                    ${coverHtml}
+                </div>
                 <div class="album-info">
                     <h3>${item.ALB_TITLE}</h3>
                     <p>${item.ART_NAME} - ${item.NUMBER_TRACK} tracks</p>
@@ -280,7 +293,17 @@ function createResultItem(item, type) {
             break;
             
         case 'ARTIST':
+            // Use artist picture if available, otherwise use a placeholder
+            const artistCoverUrl = item.ART_PICTURE ? getDeezerCoverUrl(item.ART_PICTURE, 56) : null;
+            const artistCoverHtml = artistCoverUrl ? 
+                `<img src="${artistCoverUrl}" alt="Artist Image" class="result-cover" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                 <div class="result-cover-placeholder artist-placeholder" style="display: none;">${createPlaceholderIcon('artist')}</div>` : 
+                `<div class="result-cover-placeholder artist-placeholder">${createPlaceholderIcon('artist')}</div>`;
+            
             content = `
+                <div class="result-cover-container">
+                    ${artistCoverHtml}
+                </div>
                 <div class="artist-info">
                     <h3>${item.ART_NAME}</h3>
                     <p>${item.NB_FAN} fans</p>
@@ -290,6 +313,9 @@ function createResultItem(item, type) {
             
         case 'PLAYLIST':
             content = `
+                <div class="result-cover-container">
+                    ${coverHtml}
+                </div>
                 <div class="playlist-info">
                     <h3>${item.TITLE}</h3>
                     <p>${item.NB_SONG} songs</p>
@@ -299,7 +325,14 @@ function createResultItem(item, type) {
             break;
     }
     
-    div.innerHTML = content + downloadButton;
+    div.innerHTML = `
+        <div class="result-content">
+            ${content}
+        </div>
+        <div class="result-actions">
+            ${downloadButton}
+        </div>
+    `;
     return div;
 }
 
@@ -499,6 +532,37 @@ function insertKeyword(fieldId, keyword) {
     const newCursorPos = start + keyword.length;
     field.setSelectionRange(newCursorPos, newCursorPos);
     field.focus();
+}
+
+function getDeezerCoverUrl(pictureHash, size = 250) {
+    // Generate Deezer cover URL from picture hash
+    if (!pictureHash) return null;
+    
+    const sizeMap = {
+        56: '56x56',
+        250: '250x250', 
+        500: '500x500'
+    };
+    
+    const sizeStr = sizeMap[size] || sizeMap[250];
+    return `https://cdn-images.dzcdn.net/images/cover/${pictureHash}/${sizeStr}-000000-80-0-0.jpg`;
+}
+
+function createPlaceholderIcon(type = 'album') {
+    // Create SVG placeholder icons for missing images
+    const icons = {
+        album: `<svg viewBox="0 0 24 24" fill="currentColor" style="width: 24px; height: 24px;">
+            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 14.5c-2.49 0-4.5-2.01-4.5-4.5S9.51 7.5 12 7.5s4.5 2.01 4.5 4.5-2.01 4.5-4.5 4.5zm0-5.5c-.55 0-1 .45-1 1s.45 1 1 1 1-.45 1-1-.45-1-1-1z"/>
+        </svg>`,
+        artist: `<svg viewBox="0 0 24 24" fill="currentColor" style="width: 24px; height: 24px;">
+            <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+        </svg>`,
+        playlist: `<svg viewBox="0 0 24 24" fill="currentColor" style="width: 24px; height: 24px;">
+            <path d="M15 6H3v2h12V6zm0 4H3v2h12v-2zM3 16h6v-2H3v2zM17 6v8.18c-.31-.11-.65-.18-1-.18-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3V8h3V6h-5z"/>
+        </svg>`
+    };
+    
+    return icons[type] || icons.album;
 }
 </script>
 {% endblock %}
