@@ -97,6 +97,32 @@ header h1 {
     background: #7f8c8d;
 }
 
+.keyword-btn {
+    background: #9b59b6 !important;
+    color: white !important;
+    border: none;
+    padding: 4px 8px !important;
+    border-radius: 3px !important;
+    cursor: pointer;
+    font-size: 11px !important;
+    margin-top: 3px !important;
+    margin-right: 3px !important;
+    font-family: monospace;
+}
+
+.keyword-btn:hover {
+    background: #8e44ad !important;
+}
+
+#cancel-config {
+    background: #e74c3c !important;
+    margin-left: 10px;
+}
+
+#cancel-config:hover {
+    background: #c0392b !important;
+}
+
 button {
     background: #3498db;
     color: white;

@@ -27,8 +27,30 @@
         </div>
         
         <div class="form-group">
-            <label for="download_path">Download Path:</label>
-            <input type="text" id="download_path" name="download_path" value="./downloads">
+            <label for="track_path_template">Track Path Template:</label>
+            <input type="text" id="track_path_template" name="track_path_template" value="{artist}/{album}/{track_number:02d} - {track}">
+            <small>Available keywords: {artist}, {album}, {track}, {track_number}, {year}</small>
+            <button type="button" class="keyword-btn" onclick="insertKeyword('track_path_template', '{artist}')">{artist}</button>
+            <button type="button" class="keyword-btn" onclick="insertKeyword('track_path_template', '{album}')">{album}</button>
+            <button type="button" class="keyword-btn" onclick="insertKeyword('track_path_template', '{track}')">{track}</button>
+            <button type="button" class="keyword-btn" onclick="insertKeyword('track_path_template', '{track_number}')">{track_number}</button>
+            <button type="button" class="keyword-btn" onclick="insertKeyword('track_path_template', '{year}')">{year}</button>
+        </div>
+        
+        <div class="form-group">
+            <label for="album_path_template">Album Path Template:</label>
+            <input type="text" id="album_path_template" name="album_path_template" value="{artist}/{album}">
+            <small>Available keywords: {artist}, {album}, {year}</small>
+            <button type="button" class="keyword-btn" onclick="insertKeyword('album_path_template', '{artist}')">{artist}</button>
+            <button type="button" class="keyword-btn" onclick="insertKeyword('album_path_template', '{album}')">{album}</button>
+            <button type="button" class="keyword-btn" onclick="insertKeyword('album_path_template', '{year}')">{year}</button>
+        </div>
+        
+        <div class="form-group">
+            <label for="playlist_path_template">Playlist Path Template:</label>
+            <input type="text" id="playlist_path_template" name="playlist_path_template" value="Playlists/{playlist_name}">
+            <small>Available keywords: {playlist_name}</small>
+            <button type="button" class="keyword-btn" onclick="insertKeyword('playlist_path_template', '{playlist_name}')">{playlist_name}</button>
         </div>
         
         <div class="form-group">
@@ -39,6 +61,7 @@
         </div>
         
         <button type="submit">Save Configuration</button>
+        <button type="button" id="cancel-config" onclick="cancelConfig()">Cancel</button>
     </form>
 </div>
 
@@ -124,6 +147,14 @@ function showConfigSection() {
         document.getElementById('config-message').textContent = 'Please configure your Deezer ARL cookie to continue.';
         document.getElementById('arl').value = '';
     }
+    
+    // Update form with current config
+    document.getElementById('quality').value = config.quality || '3';
+    document.getElementById('track_path_template').value = config.track_path_template || '{artist}/{album}/{track_number:02d} - {track}';
+    document.getElementById('album_path_template').value = config.album_path_template || '{artist}/{album}';
+    document.getElementById('playlist_path_template').value = config.playlist_path_template || 'Playlists/{playlist_name}';
+    document.getElementById('organize_by_folder').checked = config.organize_by_folder !== false;
+    
     document.getElementById('config-form').classList.remove('hidden');
 }
 
@@ -131,11 +162,6 @@ function showSearchSection() {
     document.getElementById('config-section').classList.add('hidden');
     document.getElementById('search-section').classList.remove('hidden');
     document.getElementById('downloads-section').classList.remove('hidden');
-    
-    // Update form with current config
-    document.getElementById('quality').value = config.quality || '3';
-    document.getElementById('download_path').value = config.download_path || './downloads';
-    document.getElementById('organize_by_folder').checked = config.organize_by_folder !== false;
 }
 
 async function saveConfig(e) {
@@ -145,7 +171,9 @@ async function saveConfig(e) {
     const configData = {
         arl: formData.get('arl'),
         quality: parseInt(formData.get('quality')),
-        download_path: formData.get('download_path'),
+        track_path_template: formData.get('track_path_template'),
+        album_path_template: formData.get('album_path_template'),
+        playlist_path_template: formData.get('playlist_path_template'),
         organize_by_folder: formData.get('organize_by_folder') === 'on'
     };
     
@@ -446,6 +474,31 @@ function clearArl() {
         document.getElementById('arl').value = '';
         document.getElementById('arl').focus();
     }
+}
+
+function cancelConfig() {
+    // Discard changes and return to search section
+    if (config.arl && config.arl.length > 3) {
+        showSearchSection();
+    } else {
+        showError('Please configure your settings before continuing');
+    }
+}
+
+function insertKeyword(fieldId, keyword) {
+    const field = document.getElementById(fieldId);
+    const start = field.selectionStart;
+    const end = field.selectionEnd;
+    const value = field.value;
+    
+    // Insert keyword at cursor position
+    const newValue = value.substring(0, start) + keyword + value.substring(end);
+    field.value = newValue;
+    
+    // Set cursor position after inserted keyword
+    const newCursorPos = start + keyword.length;
+    field.setSelectionRange(newCursorPos, newCursorPos);
+    field.focus();
 }
 </script>
 {% endblock %}

@@ -96,7 +96,7 @@ async function getPlaylistTracks(params) {
 }
 
 async function downloadTrack(params) {
-    const { track_id, quality = 3, download_path, organize_by_folder = true } = params;
+    const { track_id, quality = 3, download_path, organize_by_folder = true, filename } = params;
     
     try {
         // Get track info
@@ -115,22 +115,29 @@ async function downloadTrack(params) {
         const trackWithMetadata = await api.addTrackTags(decryptedData, track, 500);
         
         // Create filename
-        let filename;
-        if (organize_by_folder) {
+        let finalFilename;
+        if (filename) {
+            // Use provided filename (without extension if not present)
+            finalFilename = filename.endsWith('.mp3') ? filename : `${filename}.mp3`;
+            finalFilename = path.join(download_path, finalFilename);
+        } else if (organize_by_folder) {
             const artistFolder = path.join(download_path, sanitizeFilename(track.ART_NAME));
             fs.ensureDirSync(artistFolder);
-            filename = path.join(artistFolder, `${sanitizeFilename(track.SNG_TITLE)} - ${sanitizeFilename(track.ART_NAME)}.mp3`);
+            finalFilename = path.join(artistFolder, `${sanitizeFilename(track.SNG_TITLE)} - ${sanitizeFilename(track.ART_NAME)}.mp3`);
         } else {
-            filename = path.join(download_path, `${sanitizeFilename(track.SNG_TITLE)} - ${sanitizeFilename(track.ART_NAME)}.mp3`);
+            finalFilename = path.join(download_path, `${sanitizeFilename(track.SNG_TITLE)} - ${sanitizeFilename(track.ART_NAME)}.mp3`);
         }
         
+        // Ensure directory exists
+        fs.ensureDirSync(path.dirname(finalFilename));
+        
         // Save file
-        fs.writeFileSync(filename, trackWithMetadata);
+        fs.writeFileSync(finalFilename, trackWithMetadata);
         
         return {
             success: true,
-            filename: path.basename(filename),
-            full_path: filename,
+            filename: path.basename(finalFilename),
+            full_path: finalFilename,
             track_title: track.SNG_TITLE,
             artist: track.ART_NAME,
             album: track.ALB_TITLE

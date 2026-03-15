@@ -10,7 +10,10 @@ class Config:
             'download_path': str(Path(__file__).parent / 'downloads'),
             'quality': 3,  # 1 = 128kbps, 3 = 320kbps, 9 = flac
             'organize_by_folder': True,
-            'create_playlist_folders': False
+            'create_playlist_folders': False,
+            'track_path_template': '{artist}/{album}/{track_number:02d} - {track}',
+            'album_path_template': '{artist}/{album}',
+            'playlist_path_template': 'Playlists/{playlist_name}'
         }
         self.config = self.load_config()
     

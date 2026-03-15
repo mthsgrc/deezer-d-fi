@@ -8,6 +8,7 @@ from pathlib import Path
 import threading
 import time
 import logging
+import re
 from config import Config
 
 # Configure logging
@@ -25,6 +26,89 @@ Path(config.get('download_path')).mkdir(parents=True, exist_ok=True)
 
 # Global variable to track download progress
 download_progress = {}
+
+class PathTemplate:
+    """Handles path template substitution with metadata keywords"""
+    
+    @staticmethod
+    def sanitize_filename(name):
+        """Remove or replace characters that are unsafe for filenames"""
+        if not name:
+            return "Unknown"
+        
+        # Replace problematic characters (but keep path separators for directory structure)
+        unsafe_chars = ['<', '>', ':', '"', '\\', '|', '?', '*']
+        sanitized = name
+        for char in unsafe_chars:
+            sanitized = sanitized.replace(char, '_')
+        
+        # Replace forward slashes only if they're not meant to be path separators
+        # This allows template paths like {artist}/{album} to work
+        # sanitized = sanitized.replace('/', '_')  # Commented out to allow path structure
+        
+        # Remove leading/trailing spaces and dots
+        sanitized = sanitized.strip(' .')
+        
+        # Ensure it's not empty
+        if not sanitized:
+            return "Unknown"
+        
+        return sanitized
+    
+    @staticmethod
+    def substitute_template(template, metadata):
+        """Replace keywords in template with actual metadata"""
+        if not template:
+            return "Unknown"
+        
+        # Default values for missing metadata
+        defaults = {
+            'artist': 'Unknown Artist',
+            'album': 'Unknown Album',
+            'track': 'Unknown Track',
+            'track_number': 1,
+            'year': 'Unknown Year',
+            'playlist_name': 'Unknown Playlist'
+        }
+        
+        # Merge provided metadata with defaults
+        template_data = {**defaults, **metadata}
+        
+        # Sanitize string values
+        for key, value in template_data.items():
+            if isinstance(value, str):
+                template_data[key] = PathTemplate.sanitize_filename(value)
+        
+        try:
+            # Format the template
+            result = template.format(**template_data)
+            return PathTemplate.sanitize_filename(result)
+        except (KeyError, ValueError) as e:
+            logger.warning(f"Template substitution failed: {e}")
+            return PathTemplate.sanitize_filename(template)
+    
+    @staticmethod
+    def validate_template(template):
+        """Validate that template contains only supported keywords"""
+        if not template:
+            return True, "Template is empty"
+        
+        # Find all {keyword} patterns
+        pattern = r'\{([^}]+)\}'
+        matches = re.findall(pattern, template)
+        
+        # Supported keywords
+        supported_keywords = {
+            'artist', 'album', 'track', 'track_number', 'year', 'playlist_name'
+        }
+        
+        for match in matches:
+            # Handle format specifiers like {track_number:02d}
+            keyword = match.split(':')[0]
+            if keyword not in supported_keywords:
+                return False, f"Unsupported keyword: {keyword}"
+        
+        return True, "Template is valid"
 
 class DeezerAPI:
     def __init__(self):
@@ -102,7 +186,10 @@ def api_config():
                 'quality': config.get('quality', 3),
                 'download_path': config.get('download_path'),
                 'organize_by_folder': config.get('organize_by_folder', True),
-                'create_playlist_folders': config.get('create_playlist_folders', False)
+                'create_playlist_folders': config.get('create_playlist_folders', False),
+                'track_path_template': config.get('track_path_template', '{artist}/{album}/{track_number:02d} - {track}'),
+                'album_path_template': config.get('album_path_template', '{artist}/{album}'),
+                'playlist_path_template': config.get('playlist_path_template', 'Playlists/{playlist_name}')
             }
         })
     
@@ -118,8 +205,16 @@ def api_config():
             deezer_api.arl = data['arl'].strip()
             logger.info(f"Updated ARL cookie, length: {len(data['arl'].strip())}")
         
+        # Validate path templates if provided
+        template_fields = ['track_path_template', 'album_path_template', 'playlist_path_template']
+        for field in template_fields:
+            if field in data:
+                is_valid, message = PathTemplate.validate_template(data[field])
+                if not is_valid:
+                    return jsonify({'error': f'Invalid {field}: {message}'}), 400
+        
         # Update other settings
-        for key in ['quality', 'download_path', 'organize_by_folder', 'create_playlist_folders']:
+        for key in ['quality', 'download_path', 'organize_by_folder', 'create_playlist_folders'] + template_fields:
             if key in data:
                 config.set(key, data[key])
         
@@ -180,12 +275,30 @@ def api_download_track(track_id):
             download_progress[download_id]['message'] = f'Downloading {track_info.get("SNG_TITLE", "Unknown")}'
             download_progress[download_id]['progress'] = 25
             
+            # Prepare metadata for path template
+            metadata = {
+                'artist': track_info.get('ART_NAME', 'Unknown Artist'),
+                'album': track_info.get('ALB_TITLE', 'Unknown Album'),
+                'track': track_info.get('SNG_TITLE', 'Unknown Track'),
+                'track_number': int(track_info.get('TRACK_NUMBER', 1)),  # Ensure integer
+                'year': track_info.get('PHYSICAL_RELEASE_DATE', 'Unknown Year')[:4] if track_info.get('PHYSICAL_RELEASE_DATE') else 'Unknown Year'
+            }
+            
+            # Generate download path using template
+            track_template = config.get('track_path_template', '{artist}/{album}/{track_number:02d} - {track}')
+            relative_path = PathTemplate.substitute_template(track_template, metadata)
+            download_path = Path(config.get('download_path')) / relative_path
+            
+            # Ensure parent directory exists
+            download_path.parent.mkdir(parents=True, exist_ok=True)
+            
             # Download track
             result = deezer_api.call_node_script('downloadTrack', {
                 'track_id': track_id,
                 'quality': config.get('quality', 3),
-                'download_path': config.get('download_path'),
-                'organize_by_folder': config.get('organize_by_folder', True)
+                'download_path': str(download_path.parent),
+                'organize_by_folder': False,  # We handle organization ourselves
+                'filename': download_path.name
             })
             
             download_progress[download_id]['status'] = 'completed'
@@ -270,6 +383,20 @@ def api_download_album(album_id):
             if album_tracks:
                 print(f"First track: {album_tracks[0]}")
             
+            # Prepare album metadata for path template
+            album_metadata = {
+                'artist': album_info.get('ART_NAME', 'Unknown Artist'),
+                'album': album_info.get('ALB_TITLE', 'Unknown Album'),
+                'year': album_info.get('PHYSICAL_RELEASE_DATE', 'Unknown Year')[:4] if album_info.get('PHYSICAL_RELEASE_DATE') else 'Unknown Year'
+            }
+            
+            # Generate album base path using template
+            album_template = config.get('album_path_template', '{artist}/{album}')
+            album_base_path = Path(config.get('download_path')) / PathTemplate.substitute_template(album_template, album_metadata)
+            
+            # Ensure album directory exists
+            album_base_path.mkdir(parents=True, exist_ok=True)
+            
             total_tracks = len(album_tracks)
             download_progress[download_id]['total_tracks'] = total_tracks
             
@@ -280,12 +407,15 @@ def api_download_album(album_id):
                 if isinstance(track, dict):
                     track_title = track.get('SNG_TITLE', 'Unknown')
                     track_id = track.get('SNG_ID')
+                    track_number = track.get('TRACK_NUMBER', i + 1)
                 elif isinstance(track, str):
                     track_title = track
                     track_id = track
+                    track_number = i + 1
                 else:
                     track_title = str(track)
                     track_id = str(track)
+                    track_number = i + 1
                 
                 print(f"Processing track {i+1}: ID={track_id}, Title={track_title}")
                 
@@ -293,11 +423,29 @@ def api_download_album(album_id):
                 download_progress[download_id]['progress'] = (i / total_tracks) * 100
                 
                 try:
+                    # Get detailed track info for accurate metadata
+                    track_info = deezer_api.call_node_script('getTrackInfo', {'track_id': track_id})
+                    
+                    # Prepare track metadata for path template
+                    track_metadata = {
+                        'artist': track_info.get('ART_NAME', album_metadata['artist']),
+                        'album': track_info.get('ALB_TITLE', album_metadata['album']),
+                        'track': track_info.get('SNG_TITLE', track_title),
+                        'track_number': int(track_info.get('TRACK_NUMBER', track_number)),  # Ensure integer
+                        'year': track_info.get('PHYSICAL_RELEASE_DATE', album_metadata['year'])[:4] if track_info.get('PHYSICAL_RELEASE_DATE') else album_metadata['year']
+                    }
+                    
+                    # Generate track path using template (for individual file naming)
+                    track_template = config.get('track_path_template', '{artist}/{album}/{track_number:02d} - {track}')
+                    relative_track_path = PathTemplate.substitute_template(track_template, track_metadata)
+                    track_filename = Path(relative_track_path).name  # Just the filename, since we're in album folder
+                    
                     result = deezer_api.call_node_script('downloadTrack', {
                         'track_id': track_id,
                         'quality': config.get('quality', 3),
-                        'download_path': config.get('download_path'),
-                        'organize_by_folder': config.get('organize_by_folder', True)
+                        'download_path': str(album_base_path),
+                        'organize_by_folder': False,  # We handle organization ourselves
+                        'filename': track_filename
                     })
                 except Exception as track_error:
                     print(f'Failed to download track {track_title}: {track_error}')
