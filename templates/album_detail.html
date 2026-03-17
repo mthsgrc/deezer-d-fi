@@ -52,11 +52,11 @@
                 </tr>
             </thead>
             <tbody>
-                {% for track in tracks %}
+                {% for track in tracks.data %}
                 <tr class="track-row">
                     <td class="track-number">{{ track.TRACK_NUMBER }}</td>
                     <td class="track-title">{{ track.SNG_TITLE }}</td>
-                    <td class="track-duration">{{ "%d:%02d" | format(track.DURATION // 60, track.DURATION % 60) if track.DURATION else '-' }}</td>
+                    <td class="track-duration">{{ "%d:%02d" | format((track.DURATION|int) // 60, (track.DURATION|int) % 60) if track.DURATION else '-' }}</td>
                     <td class="track-actions">
                         <button class="download-btn track-download-btn" 
                                 onclick="downloadTrack('{{ track.SNG_ID }}', '{{ track.SNG_TITLE }}')">
