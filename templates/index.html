@@ -293,15 +293,17 @@
 
             case 'ALBUM':
                 content = `
-                <div class="result-cover-container">
-                    ${coverHtml}
-                </div>
-                <div class="album-info">
-                    <h3>${item.ALB_TITLE}</h3>
-                    <p>${item.ART_NAME} - ${item.NUMBER_TRACK} tracks</p>
-                </div>
+                <a href="/album/${item.ALB_ID}" class="album-link">
+                    <div class="result-cover-container">
+                        ${coverHtml}
+                    </div>
+                    <div class="album-info">
+                        <h3>${item.ALB_TITLE}</h3>
+                        <p>${item.ART_NAME} - ${item.NUMBER_TRACK} tracks</p>
+                    </div>
+                </a>
             `;
-                downloadButton = `<button class="download-btn" onclick="downloadAlbum('${item.ALB_ID}', '${item.ALB_TITLE}')">Download Album</button>`;
+                downloadButton = '';
                 break;
 
             case 'ARTIST':

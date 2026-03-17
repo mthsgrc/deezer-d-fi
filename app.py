@@ -351,6 +351,19 @@ def api_album_info(album_id):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/album/<album_id>')
+def album_detail(album_id):
+    if not config.is_configured():
+        return jsonify({'error': 'Deezer not configured. Please set ARL cookie.'}), 400
+    
+    try:
+        album_info = deezer_api.call_node_script('getAlbumInfo', {'album_id': album_id})
+        album_tracks = deezer_api.call_node_script('getAlbumTracks', {'album_id': album_id})
+        
+        return render_template('album_detail.html', album=album_info, tracks=album_tracks)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/download/album/<album_id>')
 def api_download_album(album_id):
     if not config.is_configured():
