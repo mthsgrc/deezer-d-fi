@@ -95,6 +95,28 @@ async function getPlaylistTracks(params) {
     }
 }
 
+async function getArtistInfo(params) {
+    const { artist_id } = params;
+    
+    try {
+        const artist = await api.getArtistInfo(artist_id);
+        return artist;
+    } catch (err) {
+        throw new Error(`Failed to get artist info: ${err.message}`);
+    }
+}
+
+async function getDiscography(params) {
+    const { artist_id } = params;
+    
+    try {
+        const discography = await api.getDiscography(artist_id);
+        return discography;
+    } catch (err) {
+        throw new Error(`Failed to get discography: ${err.message}`);
+    }
+}
+
 async function getLyrics(params) {
     const { track_id } = params;
     
@@ -280,6 +302,12 @@ async function main() {
                 break;
             case 'getPlaylistTracks':
                 result = await getPlaylistTracks(params);
+                break;
+            case 'getArtistInfo':
+                result = await getArtistInfo(params);
+                break;
+            case 'getDiscography':
+                result = await getDiscography(params);
                 break;
             case 'getLyrics':
                 result = await getLyrics(params);

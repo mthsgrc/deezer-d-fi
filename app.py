@@ -353,6 +353,22 @@ def api_album_info(album_id):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/artist/<artist_id>')
+def api_artist_info(artist_id):
+    if not config.is_configured():
+        return jsonify({'error': 'Deezer not configured. Please set ARL cookie.'}), 400
+    
+    try:
+        artist_info = deezer_api.call_node_script('getArtistInfo', {'artist_id': artist_id})
+        discography = deezer_api.call_node_script('getDiscography', {'artist_id': artist_id})
+        
+        return jsonify({
+            'info': artist_info,
+            'discography': discography
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/album/<album_id>')
 def album_detail(album_id):
     if not config.is_configured():
@@ -363,6 +379,35 @@ def album_detail(album_id):
         album_tracks = deezer_api.call_node_script('getAlbumTracks', {'album_id': album_id})
         
         return render_template('album_detail.html', album=album_info, tracks=album_tracks)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/artist/<artist_id>')
+def artist_detail(artist_id):
+    if not config.is_configured():
+        return jsonify({'error': 'Deezer not configured. Please set ARL cookie.'}), 400
+    
+    try:
+        artist_info = deezer_api.call_node_script('getArtistInfo', {'artist_id': artist_id})
+        discography = deezer_api.call_node_script('getDiscography', {'artist_id': artist_id})
+        
+        # Get detailed album information for each album to get release dates
+        detailed_albums = []
+        if discography and discography.get('data'):
+            for album in discography['data']:
+                # Only include albums by the main artist
+                if album.get('ART_ID') == artist_id:
+                    try:
+                        album_detail = deezer_api.call_node_script('getAlbumInfo', {'album_id': album['ALB_ID']})
+                        # Merge discography info with detailed album info
+                        merged_album = {**album, **album_detail}
+                        detailed_albums.append(merged_album)
+                    except Exception as e:
+                        logger.warning(f"Failed to get details for album {album.get('ALB_ID')}: {e}")
+                        # Still include basic album info if detailed fetch fails
+                        detailed_albums.append(album)
+        
+        return render_template('artist_detail.html', artist=artist_info, discography={'data': detailed_albums})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -476,6 +521,156 @@ def api_download_album(album_id):
             download_progress[download_id]['message'] = f'Error: {str(e)}'
     
     thread = threading.Thread(target=download_album_background)
+    thread.daemon = True
+    thread.start()
+    
+    return jsonify({'download_id': download_id})
+
+@app.route('/api/download/artist/<artist_id>')
+def api_download_artist_discography(artist_id):
+    if not config.is_configured():
+        return jsonify({'error': 'Deezer not configured. Please set ARL cookie.'}), 400
+    
+    download_id = f"artist_{artist_id}_{int(time.time())}"
+    download_progress[download_id] = {
+        'status': 'starting',
+        'progress': 0,
+        'message': 'Starting discography download...'
+    }
+    
+    def download_discography_background():
+        try:
+            download_progress[download_id]['status'] = 'fetching_info'
+            download_progress[download_id]['message'] = 'Fetching artist discography...'
+            
+            # Get artist info and discography
+            artist_info = deezer_api.call_node_script('getArtistInfo', {'artist_id': artist_id})
+            discography_response = deezer_api.call_node_script('getDiscography', {'artist_id': artist_id})
+            
+            # Extract albums from response
+            if isinstance(discography_response, dict):
+                albums = discography_response.get('data', [])
+            elif isinstance(discography_response, list):
+                albums = discography_response
+            else:
+                albums = []
+            
+            # Filter albums to only include those by the main artist
+            albums = [album for album in albums if album.get('ART_ID') == artist_id]
+            
+            if not albums:
+                download_progress[download_id]['status'] = 'error'
+                download_progress[download_id]['message'] = 'No albums found for this artist'
+                return
+            
+            # Sort albums by release date (newest first)
+            albums.sort(key=lambda x: x.get('DIGITAL_RELEASE_DATE', x.get('PHYSICAL_RELEASE_DATE', '1970-01-01')), reverse=True)
+            
+            total_albums = len(albums)
+            download_progress[download_id]['total_albums'] = total_albums
+            download_progress[download_id]['current_album'] = 0
+            
+            # Prepare artist metadata for path template
+            artist_metadata = {
+                'artist': artist_info.get('ART_NAME', 'Unknown Artist')
+            }
+            
+            for i, album in enumerate(albums):
+                download_progress[download_id]['current_album'] = i + 1
+                album_title = album.get('ALB_TITLE', 'Unknown Album')
+                album_id = album.get('ALB_ID')
+                
+                download_progress[download_id]['message'] = f'Downloading album {i + 1} of {total_albums}: {album_title}'
+                download_progress[download_id]['progress'] = (i / total_albums) * 100
+                
+                try:
+                    # Get album info and tracks
+                    album_info = deezer_api.call_node_script('getAlbumInfo', {'album_id': album_id})
+                    album_tracks_response = deezer_api.call_node_script('getAlbumTracks', {'album_id': album_id})
+                    
+                    # Extract tracks
+                    if isinstance(album_tracks_response, dict):
+                        album_tracks = album_tracks_response.get('items', []) or album_tracks_response.get('data', [])
+                    elif isinstance(album_tracks_response, list):
+                        album_tracks = album_tracks_response
+                    else:
+                        album_tracks = []
+                    
+                    # Prepare album metadata for path template
+                    album_metadata = {
+                        'artist': album_info.get('ART_NAME', artist_metadata['artist']),
+                        'album': album_info.get('ALB_TITLE', album_title),
+                        'year': album_info.get('PHYSICAL_RELEASE_DATE', 'Unknown Year')[:4] if album_info.get('PHYSICAL_RELEASE_DATE') else 'Unknown Year'
+                    }
+                    
+                    # Generate album base path using template
+                    album_template = config.get('album_path_template', '{artist}/{album}')
+                    album_base_path = Path(config.get('download_path')) / PathTemplate.substitute_template(album_template, album_metadata)
+                    
+                    # Ensure album directory exists
+                    album_base_path.mkdir(parents=True, exist_ok=True)
+                    
+                    # Download all tracks in the album
+                    for j, track in enumerate(album_tracks):
+                        # Handle both dictionary and string formats
+                        if isinstance(track, dict):
+                            track_title = track.get('SNG_TITLE', 'Unknown')
+                            track_id = track.get('SNG_ID')
+                            track_number = track.get('TRACK_NUMBER', j + 1)
+                        elif isinstance(track, str):
+                            track_title = track
+                            track_id = track
+                            track_number = j + 1
+                        else:
+                            track_title = str(track)
+                            track_id = str(track)
+                            track_number = j + 1
+                        
+                        try:
+                            # Get detailed track info for accurate metadata
+                            track_info = deezer_api.call_node_script('getTrackInfo', {'track_id': track_id})
+                            
+                            # Prepare track metadata for path template
+                            track_metadata = {
+                                'artist': track_info.get('ART_NAME', album_metadata['artist']),
+                                'album': track_info.get('ALB_TITLE', album_metadata['album']),
+                                'track': track_info.get('SNG_TITLE', track_title),
+                                'track_number': int(track_info.get('TRACK_NUMBER', track_number)),
+                                'year': track_info.get('PHYSICAL_RELEASE_DATE', album_metadata['year'])[:4] if track_info.get('PHYSICAL_RELEASE_DATE') else album_metadata['year']
+                            }
+                            
+                            # Generate track path using template
+                            track_template = config.get('track_path_template', '{artist}/{album}/{track_number:02d} - {track}')
+                            relative_track_path = PathTemplate.substitute_template(track_template, track_metadata)
+                            track_filename = Path(relative_track_path).name
+                            
+                            # Download track
+                            result = deezer_api.call_node_script('downloadTrack', {
+                                'track_id': track_id,
+                                'quality': config.get('quality', 3),
+                                'download_path': str(album_base_path),
+                                'organize_by_folder': False,
+                                'filename': track_filename,
+                                'download_lyrics': config.get('download_lyrics', True)
+                            })
+                            
+                        except Exception as track_error:
+                            print(f'Failed to download track {track_title}: {track_error}')
+                            continue
+                    
+                except Exception as album_error:
+                    print(f'Failed to download album {album_title}: {album_error}')
+                    continue
+            
+            download_progress[download_id]['status'] = 'completed'
+            download_progress[download_id]['progress'] = 100
+            download_progress[download_id]['message'] = f'Downloaded discography: {artist_info.get("ART_NAME", "Unknown")}'
+            
+        except Exception as e:
+            download_progress[download_id]['status'] = 'error'
+            download_progress[download_id]['message'] = f'Error: {str(e)}'
+    
+    thread = threading.Thread(target=download_discography_background)
     thread.daemon = True
     thread.start()
     

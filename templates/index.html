@@ -324,13 +324,15 @@
                     `<div class="result-cover-placeholder artist-placeholder">${createPlaceholderIcon('artist')}</div>`;
 
                 content = `
-                <div class="result-cover-container">
-                    ${artistCoverHtml}
-                </div>
-                <div class="artist-info">
-                    <h3>${item.ART_NAME}</h3>
-                    <p>${item.NB_FAN} fans</p>
-                </div>
+                <a href="/artist/${item.ART_ID}" class="artist-link">
+                    <div class="result-cover-container">
+                        ${artistCoverHtml}
+                    </div>
+                    <div class="artist-info">
+                        <h3>${item.ART_NAME}</h3>
+                        <p>${item.NB_FAN} fans</p>
+                    </div>
+                </a>
             `;
                 break;
 
