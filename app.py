@@ -189,7 +189,8 @@ def api_config():
                 'create_playlist_folders': config.get('create_playlist_folders', False),
                 'track_path_template': config.get('track_path_template', '{artist}/{album}/{track_number:02d} - {track}'),
                 'album_path_template': config.get('album_path_template', '{artist}/{album}'),
-                'playlist_path_template': config.get('playlist_path_template', 'Playlists/{playlist_name}')
+                'playlist_path_template': config.get('playlist_path_template', 'Playlists/{playlist_name}'),
+                'download_lyrics': config.get('download_lyrics', True)
             }
         })
     
@@ -214,7 +215,7 @@ def api_config():
                     return jsonify({'error': f'Invalid {field}: {message}'}), 400
         
         # Update other settings
-        for key in ['quality', 'download_path', 'organize_by_folder', 'create_playlist_folders'] + template_fields:
+        for key in ['quality', 'download_path', 'organize_by_folder', 'create_playlist_folders', 'download_lyrics'] + template_fields:
             if key in data:
                 config.set(key, data[key])
         
@@ -298,7 +299,8 @@ def api_download_track(track_id):
                 'quality': config.get('quality', 3),
                 'download_path': str(download_path.parent),
                 'organize_by_folder': False,  # We handle organization ourselves
-                'filename': download_path.name
+                'filename': download_path.name,
+                'download_lyrics': config.get('download_lyrics', True)
             })
             
             download_progress[download_id]['status'] = 'completed'
@@ -458,7 +460,8 @@ def api_download_album(album_id):
                         'quality': config.get('quality', 3),
                         'download_path': str(album_base_path),
                         'organize_by_folder': False,  # We handle organization ourselves
-                        'filename': track_filename
+                        'filename': track_filename,
+                        'download_lyrics': config.get('download_lyrics', True)
                     })
                 except Exception as track_error:
                     print(f'Failed to download track {track_title}: {track_error}')

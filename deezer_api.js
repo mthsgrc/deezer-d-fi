@@ -95,8 +95,19 @@ async function getPlaylistTracks(params) {
     }
 }
 
+async function getLyrics(params) {
+    const { track_id } = params;
+    
+    try {
+        const lyrics = await api.getLyrics(track_id);
+        return lyrics;
+    } catch (err) {
+        throw new Error(`Failed to get lyrics: ${err.message}`);
+    }
+}
+
 async function downloadTrack(params) {
-    const { track_id, quality = 3, download_path, organize_by_folder = true, filename } = params;
+    const { track_id, quality = 3, download_path, organize_by_folder = true, filename, download_lyrics = false } = params;
     
     try {
         // Get track info
@@ -134,7 +145,18 @@ async function downloadTrack(params) {
         // Save file
         fs.writeFileSync(finalFilename, trackWithMetadata);
         
-        return {
+        // Download lyrics if requested
+        let lyricsResult = null;
+        if (download_lyrics) {
+            try {
+                lyricsResult = await saveLyricsFile(track, path.dirname(finalFilename), path.basename(finalFilename, '.mp3'));
+            } catch (lyricsError) {
+                // Lyrics download failure shouldn't break the main download
+                console.warn(`Lyrics download failed: ${lyricsError.message}`);
+            }
+        }
+        
+        const result = {
             success: true,
             filename: path.basename(finalFilename),
             full_path: finalFilename,
@@ -142,6 +164,13 @@ async function downloadTrack(params) {
             artist: track.ART_NAME,
             album: track.ALB_TITLE
         };
+        
+        if (lyricsResult) {
+            result.lyrics_file = lyricsResult.filename;
+            result.lyrics_format = lyricsResult.format;
+        }
+        
+        return result;
     } catch (err) {
         throw new Error(`Download failed: ${err.message}`);
     }
@@ -150,6 +179,74 @@ async function downloadTrack(params) {
 function sanitizeFilename(filename) {
     // Remove invalid characters for filenames
     return filename.replace(/[<>:"/\\|?*]/g, '').trim();
+}
+
+async function saveLyricsFile(track, directoryPath, baseFilename) {
+    try {
+        // Get lyrics data
+        const lyricsData = await api.getLyrics(track.SNG_ID);
+        
+        if (!lyricsData) {
+            return null;
+        }
+        
+        let lyricsContent = '';
+        let fileExtension = 'txt';
+        let filename = '';
+        
+        // Prioritize LRC format (synchronized lyrics)
+        if (lyricsData.LYRICS_SYNC_JSON && lyricsData.LYRICS_SYNC_JSON.length > 0) {
+            // Convert synced lyrics to LRC format
+            lyricsContent = convertToLRC(lyricsData.LYRICS_SYNC_JSON);
+            fileExtension = 'lrc';
+        } else if (lyricsData.LYRICS_TEXT) {
+            // Fallback to plain text lyrics
+            lyricsContent = lyricsData.LYRICS_TEXT;
+            fileExtension = 'txt';
+        } else {
+            // No lyrics available
+            return null;
+        }
+        
+        // Create lyrics filename
+        const lyricsFilename = `${sanitizeFilename(baseFilename)}.${fileExtension}`;
+        const lyricsPath = path.join(directoryPath, lyricsFilename);
+        
+        // Save lyrics file
+        fs.writeFileSync(lyricsPath, lyricsContent, 'utf8');
+        
+        return {
+            filename: lyricsFilename,
+            format: fileExtension,
+            path: lyricsPath
+        };
+        
+    } catch (error) {
+        console.warn(`Failed to save lyrics file: ${error.message}`);
+        return null;
+    }
+}
+
+function convertToLRC(syncedLyrics) {
+    if (!Array.isArray(syncedLyrics)) {
+        return '';
+    }
+    
+    let lrcContent = '';
+    
+    // Convert synced lyrics to LRC format
+    syncedLyrics.forEach(line => {
+        if (line && line.milliseconds && line.line) {
+            const minutes = Math.floor(line.milliseconds / 60000);
+            const seconds = Math.floor((line.milliseconds % 60000) / 1000);
+            const milliseconds = line.milliseconds % 1000;
+            
+            const timestamp = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}.${milliseconds.toString().padStart(3, '0')}`;
+            lrcContent += `[${timestamp}]${line.line}\n`;
+        }
+    });
+    
+    return lrcContent;
 }
 
 // Main execution logic
@@ -183,6 +280,9 @@ async function main() {
                 break;
             case 'getPlaylistTracks':
                 result = await getPlaylistTracks(params);
+                break;
+            case 'getLyrics':
+                result = await getLyrics(params);
                 break;
             case 'downloadTrack':
                 result = await downloadTrack(params);

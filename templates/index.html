@@ -76,6 +76,13 @@
             </label>
         </div>
 
+        <div class="form-group">
+            <label>
+                <input type="checkbox" id="download_lyrics" name="download_lyrics" checked>
+                Download lyrics files (LRC/TXT)
+            </label>
+        </div>
+
         <button type="submit">Save Configuration</button>
         <button type="button" id="cancel-config" onclick="cancelConfig()">Cancel</button>
     </form>
@@ -166,6 +173,7 @@
         document.getElementById('album_path_template').value = config.album_path_template || '{artist}/{album}';
         document.getElementById('playlist_path_template').value = config.playlist_path_template || 'Playlists/{playlist_name}';
         document.getElementById('organize_by_folder').checked = config.organize_by_folder !== false;
+        document.getElementById('download_lyrics').checked = config.download_lyrics !== false;
 
         document.getElementById('config-form').classList.remove('hidden');
     }
@@ -186,7 +194,8 @@
             track_path_template: formData.get('track_path_template'),
             album_path_template: formData.get('album_path_template'),
             playlist_path_template: formData.get('playlist_path_template'),
-            organize_by_folder: formData.get('organize_by_folder') === 'on'
+            organize_by_folder: formData.get('organize_by_folder') === 'on',
+            download_lyrics: formData.get('download_lyrics') === 'on'
         };
 
         try {
@@ -472,7 +481,9 @@
                 <h4>${download.title || 'Unknown'}</h4>
                 <p>Status: ${download.status || 'starting'}</p>
                 ${download.progress ? `<p>Progress: ${download.progress}%</p>` : ''}
+                ${download.current_track && download.total_tracks ? `<p>Track ${download.current_track} of ${download.total_tracks}</p>` : ''}
                 ${download.message ? `<p>${download.message}</p>` : ''}
+                ${download.result && download.result.lyrics_file ? `<p>Lyrics: ${download.result.lyrics_file} (${download.result.lyrics_format.toUpperCase()})</p>` : ''}
             </div>
         `;
 

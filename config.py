@@ -13,7 +13,8 @@ class Config:
             'create_playlist_folders': False,
             'track_path_template': '{artist}/{album}/{track_number:02d} - {track}',
             'album_path_template': '{artist}/{album}',
-            'playlist_path_template': 'Playlists/{playlist_name}'
+            'playlist_path_template': 'Playlists/{playlist_name}',
+            'download_lyrics': True  # Download lyrics files with tracks
         }
         self.config = self.load_config()
     
