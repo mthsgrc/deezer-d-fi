@@ -274,13 +274,13 @@
 
     function createResultItem(item, type) {
         const div = document.createElement('div');
-        div.className = 'result-item';
+        div.className = 'result-card';
 
         let content = '';
         let downloadButton = '';
 
         // Get album cover URL
-        const coverUrl = getDeezerCoverUrl(item.ALB_PICTURE, 56);
+        const coverUrl = getDeezerCoverUrl(item.ALB_PICTURE, 250);
         const coverHtml = coverUrl ?
             `<img src="${coverUrl}" alt="Album Cover" class="result-cover" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
          <div class="result-cover-placeholder" style="display: none;">${createPlaceholderIcon('album')}</div>` :
@@ -289,12 +289,21 @@
         switch (type) {
             case 'TRACK':
                 content = `
-                <div class="result-cover-container">
-                    ${coverHtml}
-                </div>
-                <div class="track-info">
-                    <h3>${item.SNG_TITLE}</h3>
-                    <p>${item.ART_NAME} - ${item.ALB_TITLE}</p>
+                <div class="track-card">
+                    <div class="track-cover">
+                        ${coverHtml}
+                    </div>
+                    <div class="track-details">
+                        <h3 class="track-title">${item.SNG_TITLE}</h3>
+                        <div class="track-meta">
+                            <a href="/artist/${item.ART_ID}" class="track-artist-link">${item.ART_NAME}</a>
+                            <a href="/album/${item.ALB_ID}" class="track-album-link">${item.ALB_TITLE}</a>
+                        </div>
+                        <div class="track-stats">
+                            <span class="track-duration">${formatTrackDuration(item.DURATION)}</span>
+                            <span class="track-number">Track ${item.TRACK_NUMBER || 'N/A'}</span>
+                        </div>
+                    </div>
                 </div>
             `;
                 downloadButton = `<button class="download-btn" onclick="downloadTrack('${item.SNG_ID}', '${item.SNG_TITLE}')">Download</button>`;
@@ -302,13 +311,22 @@
 
             case 'ALBUM':
                 content = `
-                <a href="/album/${item.ALB_ID}" class="album-link">
-                    <div class="result-cover-container">
-                        ${coverHtml}
-                    </div>
-                    <div class="album-info">
-                        <h3>${item.ALB_TITLE}</h3>
-                        <p>${item.ART_NAME} - ${item.NUMBER_TRACK} tracks</p>
+                <a href="/album/${item.ALB_ID}" class="album-card-link">
+                    <div class="album-card">
+                        <div class="album-cover">
+                            ${coverHtml}
+                        </div>
+                        <div class="album-details">
+                            <h3 class="album-title">${item.ALB_TITLE}</h3>
+                            <div class="album-meta">
+                                <span class="album-artist">${item.ART_NAME}</span>
+                                <span class="album-year">${item.PHYSICAL_RELEASE_DATE ? item.PHYSICAL_RELEASE_DATE.substring(0, 4) : 'Unknown'}</span>
+                            </div>
+                            <div class="album-stats">
+                                <span class="album-tracks">${item.NUMBER_TRACK || 0} tracks</span>
+                                <span class="album-type">${getAlbumType(item)}</span>
+                            </div>
+                        </div>
                     </div>
                 </a>
             `;
@@ -317,33 +335,52 @@
 
             case 'ARTIST':
                 // Use artist picture if available, otherwise use a placeholder
-                const artistCoverUrl = item.ART_PICTURE ? getDeezerCoverUrl(item.ART_PICTURE, 56) : null;
+                const artistCoverUrl = item.ART_PICTURE ? getDeezerCoverUrl(item.ART_PICTURE, 250, 'artist') : null;
                 const artistCoverHtml = artistCoverUrl ?
                     `<img src="${artistCoverUrl}" alt="Artist Image" class="result-cover" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
                  <div class="result-cover-placeholder artist-placeholder" style="display: none;">${createPlaceholderIcon('artist')}</div>` :
                     `<div class="result-cover-placeholder artist-placeholder">${createPlaceholderIcon('artist')}</div>`;
 
                 content = `
-                <a href="/artist/${item.ART_ID}" class="artist-link">
-                    <div class="result-cover-container">
-                        ${artistCoverHtml}
-                    </div>
-                    <div class="artist-info">
-                        <h3>${item.ART_NAME}</h3>
-                        <p>${item.NB_FAN} fans</p>
+                <a href="/artist/${item.ART_ID}" class="artist-card-link">
+                    <div class="artist-card">
+                        <div class="artist-cover">
+                            ${artistCoverHtml}
+                        </div>
+                        <div class="artist-details">
+                            <h3 class="artist-name">${item.ART_NAME}</h3>
+                            <div class="artist-stats">
+                                <span class="artist-fans">${formatNumber(item.NB_FAN)} fans</span>
+                                <span class="artist-albums" id="artist-albums-${item.ART_ID}">Loading albums...</span>
+                            </div>
+                            <div class="artist-genre">
+                                <span class="genre-tag">${item.ROLE || 'Artist'}</span>
+                            </div>
+                        </div>
                     </div>
                 </a>
             `;
+                
+                // Fetch album count asynchronously
+                fetchArtistAlbumCount(item.ART_ID);
                 break;
 
             case 'PLAYLIST':
                 content = `
-                <div class="result-cover-container">
-                    ${coverHtml}
-                </div>
-                <div class="playlist-info">
-                    <h3>${item.TITLE}</h3>
-                    <p>${item.NB_SONG} songs</p>
+                <div class="playlist-card">
+                    <div class="playlist-cover">
+                        ${coverHtml}
+                    </div>
+                    <div class="playlist-details">
+                        <h3 class="playlist-title">${item.TITLE}</h3>
+                        <div class="playlist-stats">
+                            <span class="playlist-songs">${item.NB_SONG} songs</span>
+                            <span class="playlist-duration">${formatNumber(item.NB_FAN || 0)} followers</span>
+                        </div>
+                        <div class="playlist-user">
+                            <span class="user-name">${item.USER || 'Various Artists'}</span>
+                        </div>
+                    </div>
                 </div>
             `;
                 downloadButton = `<button class="download-btn" onclick="downloadPlaylist('${item.PLAYLIST_ID}', '${item.TITLE}')">Download Playlist</button>`;
@@ -351,13 +388,13 @@
         }
 
         div.innerHTML = `
-        <div class="result-content">
-            ${content}
-        </div>
-        <div class="result-actions">
-            ${downloadButton}
-        </div>
-    `;
+            <div class="card-content">
+                ${content}
+            </div>
+            <div class="card-actions">
+                ${downloadButton}
+            </div>
+        `;
         return div;
     }
 
@@ -561,18 +598,20 @@
         field.focus();
     }
 
-    function getDeezerCoverUrl(pictureHash, size = 250) {
+    function getDeezerCoverUrl(pictureHash, size = 250, type = 'cover') {
         // Generate Deezer cover URL from picture hash
         if (!pictureHash) return null;
 
         const sizeMap = {
             56: '56x56',
+            120: '120x120',
             250: '250x250',
             500: '500x500'
         };
 
         const sizeStr = sizeMap[size] || sizeMap[250];
-        return `https://cdn-images.dzcdn.net/images/cover/${pictureHash}/${sizeStr}-000000-80-0-0.jpg`;
+        const imagePath = type === 'artist' ? 'artist' : 'cover';
+        return `https://cdn-images.dzcdn.net/images/${imagePath}/${pictureHash}/${sizeStr}-000000-80-0-0.jpg`;
     }
 
     function createPlaceholderIcon(type = 'album') {
@@ -590,6 +629,102 @@
         };
 
         return icons[type] || icons.album;
+    }
+
+    // Helper functions for enhanced card display
+    function formatTrackDuration(duration) {
+        if (!duration) return 'Unknown';
+        const minutes = Math.floor(duration / 60);
+        const seconds = duration % 60;
+        return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+    }
+
+    function formatNumber(num) {
+        if (!num) return '0';
+        return num.toLocaleString();
+    }
+
+    function getAlbumType(album) {
+        if (album.TYPE === '0') return 'Single';
+        if (album.TYPE === '3') return 'EP';
+        if (album.SUBTYPES) {
+            if (album.SUBTYPES.isLive) return 'Live';
+            if (album.SUBTYPES.isCompilation) return 'Compilation';
+            if (album.SUBTYPES.isKaraoke) return 'Karaoke';
+        }
+        return 'Album';
+    }
+
+    // Fetch artist album count asynchronously
+    async function fetchArtistAlbumCount(artistId) {
+        try {
+            const response = await fetch(`/api/artist/${artistId}`);
+            if (response.ok) {
+                const data = await response.json();
+                let breakdown = {
+                    total: 0,
+                    studio: 0,
+                    eps: 0,
+                    singles: 0,
+                    live: 0,
+                    compilation: 0
+                };
+                
+                if (data.discography && data.discography.data) {
+                    data.discography.data.forEach(album => {
+                        // Only count primary artist releases
+                        if (album.ART_ID == artistId) {
+                            breakdown.total++;
+                            
+                            // Classify by type
+                            if (album.TYPE === '0') {
+                                breakdown.singles++;
+                            } else if (album.TYPE === '3') {
+                                breakdown.eps++;
+                            } else {
+                                // It's an album (TYPE '1' or default)
+                                if (album.SUBTYPES) {
+                                    if (album.SUBTYPES.isLive) {
+                                        breakdown.live++;
+                                    } else if (album.SUBTYPES.isCompilation) {
+                                        breakdown.compilation++;
+                                    } else {
+                                        breakdown.studio++;
+                                    }
+                                } else {
+                                    breakdown.studio++;
+                                }
+                            }
+                        }
+                    });
+                }
+                
+                const element = document.getElementById(`artist-albums-${artistId}`);
+                if (element) {
+                    // Build detailed breakdown string
+                    let parts = [];
+                    if (breakdown.studio > 0) parts.push(`${breakdown.studio} studio`);
+                    if (breakdown.eps > 0) parts.push(`${breakdown.eps} EPs`);
+                    if (breakdown.singles > 0) parts.push(`${breakdown.singles} singles`);
+                    if (breakdown.live > 0) parts.push(`${breakdown.live} live`);
+                    
+                    let breakdownText = parts.length > 0 ? parts.join(', ') : 'No releases';
+                    element.textContent = `${breakdown.total} albums (${breakdownText})`;
+                }
+            } else {
+                // Fallback if API call fails
+                const element = document.getElementById(`artist-albums-${artistId}`);
+                if (element) {
+                    element.textContent = 'Albums: N/A';
+                }
+            }
+        } catch (error) {
+            console.log(`Failed to fetch album count for artist ${artistId}`);
+            const element = document.getElementById(`artist-albums-${artistId}`);
+            if (element) {
+                element.textContent = 'Albums: N/A';
+            }
+        }
     }
 </script>
 {% endblock %}

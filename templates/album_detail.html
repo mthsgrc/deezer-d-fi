@@ -34,7 +34,7 @@
                 <button class="download-btn album-download-btn" onclick="downloadAlbum('{{ album.ALB_ID }}', '{{ album.ALB_TITLE }}')">
                     Download Album
                 </button>
-                <a href="/" class="back-btn">← Back to Search</a>
+                <a href="javascript:goBackWithFallback()" class="back-btn">← Back to Search</a>
             </div>
         </div>
     </div>
@@ -223,6 +223,16 @@
         setTimeout(() => {
             errorDiv.classList.add('hidden');
         }, 5000);
+    }
+
+    function goBackWithFallback() {
+        // Try to go back in history
+        if (window.history.length > 1) {
+            window.history.back();
+        } else {
+            // If no history, go to home page
+            window.location.href = '/';
+        }
     }
 
     // Initialize downloads section
