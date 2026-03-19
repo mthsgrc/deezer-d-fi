@@ -7,6 +7,8 @@ import sys
 from pathlib import Path
 import threading
 import time
+import weakref
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import logging
 import re
 from config import Config
@@ -18,14 +20,114 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 CORS(app)
 
+# Performance improvements: DownloadManager with automatic cleanup
+class DownloadManager:
+    """Manages download progress tracking with automatic cleanup"""
+    
+    def __init__(self):
+        self._downloads = {}
+        self._cleanup_thread = None
+        self._running = True
+        self._start_cleanup_thread()
+    
+    def _start_cleanup_thread(self):
+        """Start background cleanup thread"""
+        def cleanup_worker():
+            while self._running:
+                try:
+                    current_time = time.time()
+                    to_remove = []
+                    for download_id, data in self._downloads.items():
+                        status = data.get('status', '')
+                        created = data.get('created_time', current_time)
+                        
+                        # Remove completed/error downloads after 5 minutes
+                        if status in ['completed', 'error'] and current_time - created > 300:
+                            to_remove.append(download_id)
+                        # Remove active downloads after 1 hour (they're likely stuck)
+                        elif status not in ['completed', 'error'] and current_time - created > 3600:
+                            to_remove.append(download_id)
+                    
+                    for download_id in to_remove:
+                        del self._downloads[download_id]
+                        logger.info(f"Cleaned up download {download_id}")
+                        
+                except Exception as e:
+                    logger.error(f"Cleanup error: {e}")
+                time.sleep(60)  # Run cleanup every minute
+        
+        self._cleanup_thread = threading.Thread(target=cleanup_worker, daemon=True)
+        self._cleanup_thread.start()
+    
+    def add_download(self, download_id, initial_data=None):
+        """Add a new download tracking entry"""
+        self._downloads[download_id] = {
+            'created_time': time.time(),
+            'status': 'starting',
+            'progress': 0,
+            'message': 'Initializing...',
+            **(initial_data or {})
+        }
+    
+    def update_download(self, download_id, **updates):
+        """Update download progress"""
+        if download_id in self._downloads:
+            self._downloads[download_id].update(updates)
+    
+    def get_download(self, download_id):
+        """Get download status"""
+        return self._downloads.get(download_id)
+    
+    def remove_download(self, download_id):
+        """Remove download tracking"""
+        self._downloads.pop(download_id, None)
+    
+    def shutdown(self):
+        """Shutdown cleanup thread"""
+        self._running = False
+        if self._cleanup_thread:
+            self._cleanup_thread.join(timeout=1)
+
+# Performance improvements: Smart polling with exponential backoff
+class SmartPoller:
+    """Intelligent polling with exponential backoff"""
+    
+    def __init__(self):
+        self._poll_intervals = {
+            'track': {'min': 1, 'max': 10, 'max_attempts': 60},
+            'album': {'min': 1, 'max': 10, 'max_attempts': 120},
+            'artist': {'min': 1, 'max': 10, 'max_attempts': 300}
+        }
+    
+    def calculate_interval(self, attempt, download_type, current_status=None):
+        """Calculate next poll interval based on download type and status"""
+        config = self._poll_intervals.get(download_type, self._poll_intervals['track'])
+        
+        # Faster polling when status changes or early in process
+        if attempt < 3 or current_status in ['starting', 'fetching_info']:
+            return config['min']
+        
+        # Exponential backoff with jitter
+        base_interval = min(config['min'] * (2 ** min(attempt // 5, 4)), config['max'])
+        jitter = base_interval * 0.1 * (0.5 - time.time() % 1)  # Add small randomness
+        
+        return base_interval + jitter
+
+# Initialize performance managers
+download_manager = DownloadManager()
+smart_poller = SmartPoller()
+
+# Thread pool for downloads (max 3 concurrent)
+thread_pool = ThreadPoolExecutor(max_workers=3, thread_name_prefix='download')
+
 # Initialize configuration
 config = Config()
 
 # Ensure downloads directory exists
 Path(config.get('download_path')).mkdir(parents=True, exist_ok=True)
 
-# Global variable to track download progress
-download_progress = {}
+# Old global variable - REPLACED by DownloadManager above
+download_progress = {}  # Keep for backward compatibility during transition
 
 class PathTemplate:
     """Handles path template substitution with metadata keywords"""
@@ -379,6 +481,55 @@ def album_detail(album_id):
         album_tracks = deezer_api.call_node_script('getAlbumTracks', {'album_id': album_id})
         
         return render_template('album_detail.html', album=album_info, tracks=album_tracks)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/artist/<artist_id>/albums-count')
+def api_artist_albums_count(artist_id):
+    if not config.is_configured():
+        return jsonify({'error': 'Deezer not configured. Please set ARL cookie.'}), 400
+    
+    try:
+        discography = deezer_api.call_node_script('getDiscography', {'artist_id': artist_id})
+        
+        # Initialize album type counters
+        album_counts = {
+            'album': 0,      # Studio albums (TYPE '1')
+            'ep': 0,         # EPs (TYPE '3')
+            'single': 0,      # Singles (TYPE '0')
+            'live': 0,        # Live albums
+            'compilation': 0, # Compilations
+            'karaoke': 0,     # Karaoke albums
+            'total': 0
+        }
+        
+        # Count albums by this artist only and categorize them
+        if discography and discography.get('data'):
+            for album in discography['data']:
+                if album.get('ART_ID') == artist_id:
+                    album_counts['total'] += 1
+                    
+                    # Categorize by TYPE field
+                    if album.get('TYPE') == '0':
+                        album_counts['single'] += 1
+                    elif album.get('TYPE') == '3':
+                        album_counts['ep'] += 1
+                    elif album.get('TYPE') == '1':
+                        # Check SUBTYPES for TYPE '1' albums
+                        if album.get('SUBTYPES'):
+                            subtypes = album['SUBTYPES']
+                            if subtypes.get('isLive'):
+                                album_counts['live'] += 1
+                            elif subtypes.get('isCompilation'):
+                                album_counts['compilation'] += 1
+                            elif subtypes.get('isKaraoke'):
+                                album_counts['karaoke'] += 1
+                            else:
+                                album_counts['album'] += 1
+                        else:
+                            album_counts['album'] += 1
+        
+        return jsonify(album_counts)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
