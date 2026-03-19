@@ -382,6 +382,17 @@ def album_detail(album_id):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/album/<album_id>/details')
+def api_album_details(album_id):
+    if not config.is_configured():
+        return jsonify({'error': 'Deezer not configured. Please set ARL cookie.'}), 400
+    
+    try:
+        album_info = deezer_api.call_node_script('getAlbumInfo', {'album_id': album_id})
+        return jsonify(album_info)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/artist/<artist_id>')
 def artist_detail(artist_id):
     if not config.is_configured():
@@ -391,23 +402,12 @@ def artist_detail(artist_id):
         artist_info = deezer_api.call_node_script('getArtistInfo', {'artist_id': artist_id})
         discography = deezer_api.call_node_script('getDiscography', {'artist_id': artist_id})
         
-        # Get detailed album information for each album to get release dates
-        detailed_albums = []
+        # Filter albums to only include those by the main artist (for fast loading)
+        filtered_albums = []
         if discography and discography.get('data'):
-            for album in discography['data']:
-                # Only include albums by the main artist
-                if album.get('ART_ID') == artist_id:
-                    try:
-                        album_detail = deezer_api.call_node_script('getAlbumInfo', {'album_id': album['ALB_ID']})
-                        # Merge discography info with detailed album info
-                        merged_album = {**album, **album_detail}
-                        detailed_albums.append(merged_album)
-                    except Exception as e:
-                        logger.warning(f"Failed to get details for album {album.get('ALB_ID')}: {e}")
-                        # Still include basic album info if detailed fetch fails
-                        detailed_albums.append(album)
+            filtered_albums = [album for album in discography['data'] if album.get('ART_ID') == artist_id]
         
-        return render_template('artist_detail.html', artist=artist_info, discography={'data': detailed_albums})
+        return render_template('artist_detail.html', artist=artist_info, discography={'data': filtered_albums})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 

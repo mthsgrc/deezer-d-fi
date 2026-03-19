@@ -82,7 +82,7 @@
             
             <div class="album-card" 
                  data-album-type="{{ album_type }}" 
-                 data-release-date="{{ album.DIGITAL_RELEASE_DATE | default(album.PHYSICAL_RELEASE_DATE | default('1970-01-01')) }}">
+                 data-release-date="{{ album.PHYSICAL_RELEASE_DATE | default('1970-01-01') }}">
                 <a href="/album/{{ album.ALB_ID }}" class="album-link">
                     <div class="album-cover">
                         {% if album.ALB_PICTURE %}
@@ -100,13 +100,10 @@
                     <div class="album-info">
                         <h3 class="album-title">{{ album.ALB_TITLE }}</h3>
                         <p class="album-year">
-                            {% if album.DIGITAL_RELEASE_DATE %}
-                                {{ album.DIGITAL_RELEASE_DATE[:4] }}
-                                {% if album.PHYSICAL_RELEASE_DATE and album.PHYSICAL_RELEASE_DATE != album.DIGITAL_RELEASE_DATE %}
-                                    (Physical: {{ album.PHYSICAL_RELEASE_DATE[:4] }})
-                                {% endif %}
-                            {% elif album.PHYSICAL_RELEASE_DATE %}
+                            {% if album.PHYSICAL_RELEASE_DATE %}
                                 {{ album.PHYSICAL_RELEASE_DATE[:4] }}
+                            {% else %}
+                                Unknown Year
                             {% endif %}
                         </p>
                         <p class="album-tracks">
@@ -322,6 +319,31 @@
             container.appendChild(item);
         });
     }
+
+    // Load release dates asynchronously
+    async function loadReleaseDates() {
+        const albumCards = document.querySelectorAll('.album-card');
+        
+        for (let card of albumCards) {
+            const albumId = card.querySelector('.album-link').href.split('/album/')[1];
+            const yearElement = card.querySelector('.album-year');
+            
+            try {
+                const response = await fetch(`/api/album/${albumId}/details`);
+                const albumInfo = await response.json();
+                
+                if (albumInfo.PHYSICAL_RELEASE_DATE) {
+                    yearElement.textContent = albumInfo.PHYSICAL_RELEASE_DATE.substring(0, 4);
+                    card.dataset.releaseDate = albumInfo.PHYSICAL_RELEASE_DATE;
+                }
+            } catch (error) {
+                console.log(`Failed to load release date for album ${albumId}`);
+            }
+        }
+    }
+    
+    // Start loading release dates after page loads
+    setTimeout(loadReleaseDates, 100);
 
     function filterAlbums() {
         const filterType = document.getElementById('album-filter').value;
