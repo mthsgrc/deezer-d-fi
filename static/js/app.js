@@ -359,13 +359,57 @@ class DeezerDownloader {
             const data = await response.json();
 
             if (response.ok) {
-                this.activeDownloads[data.download_id] = {
-                    type: 'track',
-                    title: trackTitle,
-                    status: 'starting'
-                };
-                this.updateDownloadsList();
-                this.pollDownloadStatus(data.download_id);
+                // Use global download manager if available
+                if (window.downloadManager) {
+                    window.downloadManager.addDownload(data.download_id, {
+                        type: 'track',
+                        title: trackTitle,
+                        trackId: trackId
+                    });
+                } else {
+                    // Fallback to local tracking
+                    this.activeDownloads[data.download_id] = {
+                        type: 'track',
+                        title: trackTitle,
+                        status: 'starting'
+                    };
+                    this.updateDownloadsList();
+                    this.pollDownloadStatus(data.download_id);
+                }
+            } else {
+                this.showError(data.error || 'Download failed');
+            }
+        } catch (error) {
+            this.handleError('Download failed', error);
+        }
+    }
+
+    /**
+     * Download playlist
+     */
+    async downloadPlaylist(playlistId, playlistTitle) {
+        try {
+            const response = await fetch(`/api/download/playlist/${playlistId}`);
+            const data = await response.json();
+
+            if (response.ok) {
+                // Use global download manager if available
+                if (window.downloadManager) {
+                    window.downloadManager.addDownload(data.download_id, {
+                        type: 'playlist',
+                        title: playlistTitle,
+                        playlistId: playlistId
+                    });
+                } else {
+                    // Fallback to local tracking
+                    this.activeDownloads[data.download_id] = {
+                        type: 'playlist',
+                        title: playlistTitle,
+                        status: 'starting'
+                    };
+                    this.updateDownloadsList();
+                    this.pollDownloadStatus(data.download_id);
+                }
             } else {
                 this.showError(data.error || 'Download failed');
             }
@@ -522,7 +566,11 @@ class DeezerDownloader {
     showSearchSection() {
         document.getElementById('config-section').classList.add('hidden');
         document.getElementById('search-section').classList.remove('hidden');
-        document.getElementById('downloads-section').classList.remove('hidden');
+        // Hide old downloads section since we now have sidebar
+        const oldDownloadsSection = document.getElementById('downloads-section');
+        if (oldDownloadsSection) {
+            oldDownloadsSection.classList.add('hidden');
+        }
     }
 
     /**

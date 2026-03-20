@@ -428,6 +428,26 @@ def api_download_status(download_id):
     else:
         return jsonify({'error': 'Download not found'}), 404
 
+@app.route('/api/download/cancel/<download_id>', methods=['POST'])
+def api_cancel_download(download_id):
+    if download_id in download_progress:
+        # Mark download as cancelled
+        download_progress[download_id]['status'] = 'cancelled'
+        download_progress[download_id]['message'] = 'Download cancelled by user'
+        
+        # Remove from tracking after a short delay
+        def cleanup():
+            import time
+            time.sleep(2)  # Give frontend time to see the cancelled status
+            download_progress.pop(download_id, None)
+        
+        cleanup_thread = threading.Thread(target=cleanup, daemon=True)
+        cleanup_thread.start()
+        
+        return jsonify({'success': True, 'message': 'Download cancelled'})
+    else:
+        return jsonify({'error': 'Download not found'}), 404
+
 @app.route('/api/track/<track_id>')
 def api_track_info(track_id):
     if not config.is_configured():
